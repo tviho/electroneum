@@ -147,6 +147,7 @@ set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 enable_testing()
 
 option(BUILD_DOCUMENTATION "Build the Doxygen documentation." ON)
+option(BUILD_TESTS "Build tests." OFF)
 
 # Check whether we're on a 32-bit or 64-bit system
 if(CMAKE_SIZEOF_VOID_P EQUAL "8")
@@ -297,6 +298,7 @@ if (APPLE)
   set(LIBUNWIND_LIBRARIES "")
 elseif(CMAKE_C_COMPILER_ID STREQUAL "GNU" AND NOT MINGW)
   set(DEFAULT_STACK_TRACE ON)
+  set(STACK_TRACE_LIB "easylogging++") # for diag output only
   set(LIBUNWIND_LIBRARIES "")
 elseif (ARM AND STATIC)
   set(DEFAULT_STACK_TRACE OFF)
@@ -305,6 +307,7 @@ else()
   find_package(Libunwind)
   if(LIBUNWIND_FOUND)
     set(DEFAULT_STACK_TRACE ON)
+    set(STACK_TRACE_LIB "libunwind") # for diag output only
   else()
     set(DEFAULT_STACK_TRACE OFF)
     set(LIBUNWIND_LIBRARIES "")
@@ -314,9 +317,15 @@ endif()
 option(STACK_TRACE "Install a hook that dumps stack on exception" ${DEFAULT_STACK_TRACE})
 
 if(STACK_TRACE)
-  message(STATUS "Stack trace on exception enabled")
+  message(STATUS "Stack trace on exception enabled (using ${STACK_TRACE_LIB})")
 else()
   message(STATUS "Stack trace on exception disabled")
+endif()
+
+if (UNIX AND NOT APPLE)
+  # Note that at the time of this writing the -Wstrict-prototypes flag added below will make this fail
+  set(THREADS_PREFER_PTHREAD_FLAG ON)
+  find_package(Threads)
 endif()
 
 # Handle OpenSSL, used for sha256sum on binary updates
@@ -330,17 +339,15 @@ if (APPLE AND NOT IOS)
 endif()
 
 find_package(OpenSSL REQUIRED)
+message(STATUS "Using OpenSSL include dir at ${OPENSSL_INCLUDE_DIR}")
+include_directories(${OPENSSL_INCLUDE_DIR})
 if(STATIC AND NOT IOS)
   if(UNIX)
-    set(OPENSSL_LIBRARIES "${OPENSSL_LIBRARIES};${CMAKE_DL_LIBS}")
+    set(OPENSSL_LIBRARIES "${OPENSSL_LIBRARIES};${CMAKE_DL_LIBS};${CMAKE_THREAD_LIBS_INIT}")
   endif()
 endif()
+  set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-Bstatic -lwinpthread ")
 
-if (UNIX AND NOT APPLE)
-  # Note that at the time of this writing the -Wstrict-prototypes flag added below will make this fail
-  set(THREADS_PREFER_PTHREAD_FLAG ON)
-  find_package(Threads)
-endif()
 
 add_definitions(-DAUTO_INITIALIZE_EASYLOGGINGPP)
 
@@ -407,7 +414,7 @@ else()
       set(WARNINGS "${WARNINGS} -Wno-error=inline-asm")
     endif()
   else()
-    set(WARNINGS "${WARNINGS} -Wlogical-op -Wno-error=maybe-uninitialized")
+    set(WARNINGS "${WARNINGS} -Wlogical-op -Wno-error=maybe-uninitialized -Wno-error=cpp")
   endif()
   if(MINGW)
     set(WARNINGS "${WARNINGS} -Wno-error=unused-value -Wno-error=unused-but-set-variable")
